@@ -25,7 +25,7 @@ jobs:
       - name: Prepare site artifact
         run: |
           mkdir -p _site
-          test -f index.html
+          test -f index.html || { echo "Error: index.html not found"; exit 1; }
           cp index.html _site/
           if [ -f .nojekyll ]; then
             cp .nojekyll _site/
