@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Imposer — booklet page-order calculator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js" onerror="window.__pdfLibFailed=true"></script>
+<style>
+  :root{
+    --paper:#FBFAF6;
+    --card:#FFFFFF;
+    --ink:#1B1A17;
+    --ink-soft:#5A574E;
+    --line:#DDDACF;
+    --plate:#2B49C6;      /* registration blue — fold guides, actions */
+    --plate-soft:#E7EBFA;
+    --cut:#B9B5A6;
+    --warn-bg:#FBEFE3;
+    --warn-ink:#8A4B12;
+    --mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+    --sans:'IBM Plex Sans',system-ui,-apple-system,'Segoe UI',sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:var(--sans);
+    font-size:15px;
+    line-height:1.5;
+  }
+  a{color:var(--plate)}
+
+  header{
+    max-width:1160px;margin:0 auto;padding:36px 24px 8px;
+  }
+  header h1{
+    font-size:26px;font-weight:700;letter-spacing:-.01em;margin:0 0 6px;
+  }
+  header h1 .fold{color:var(--plate)}
+  header p{margin:0;color:var(--ink-soft);max-width:62ch}
+
+  .layout{
+    max-width:1160px;margin:0 auto;padding:20px 24px 72px;
+    display:grid;grid-template-columns:372px 1fr;gap:28px;align-items:start;
+  }
+  @media(max-width:880px){.layout{grid-template-columns:1fr}}
+
+  /* ---------- form ---------- */
+  form.panel{
+    background:var(--card);border:1px solid var(--line);border-radius:10px;
+    padding:20px;position:sticky;top:16px;
+  }
+  @media(max-width:880px){form.panel{position:static}}
+  fieldset{border:0;margin:0 0 18px;padding:0}
+  fieldset:last-of-type{margin-bottom:0}
+  legend{
+    font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.09em;
+    text-transform:uppercase;color:var(--ink-soft);padding:0;margin-bottom:8px;
+  }
+  label.field{display:block;margin-bottom:10px}
+  label.field span.lab{display:block;font-weight:500;font-size:13.5px;margin-bottom:4px}
+  input[type=number],select{
+    width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:7px;
+    background:var(--paper);font:inherit;color:var(--ink);
+  }
+  input[type=number]:focus,select:focus,button:focus-visible{
+    outline:2px solid var(--plate);outline-offset:1px;border-color:var(--plate);
+  }
+  .radios{display:flex;flex-direction:column;gap:6px}
+  .radios label,.check{
+    display:flex;align-items:flex-start;gap:8px;font-size:13.5px;cursor:pointer;
+  }
+  .radios input,.check input{margin-top:3px;accent-color:var(--plate)}
+  .radios .sub{display:block;color:var(--ink-soft);font-size:12.5px}
+  .inline-num{width:88px !important;display:inline-block;margin-left:28px;margin-top:4px}
+  .hint{font-size:12.5px;color:var(--ink-soft);margin:4px 0 0}
+  input[type=file]{width:100%;font-size:12.5px;color:var(--ink-soft)}
+  input[type=file]::file-selector-button{
+    font:inherit;font-size:13px;font-weight:500;cursor:pointer;margin-right:10px;
+    border:1px solid var(--line);background:var(--paper);color:var(--ink);
+    border-radius:7px;padding:6px 12px;
+  }
+  .pdfinfo{
+    display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+    background:var(--plate-soft);border-radius:7px;padding:8px 11px;
+    font-size:13px;margin-top:6px;
+  }
+  .pdfinfo b{font-weight:600}
+  .pdfinfo .pages{font-family:var(--mono);font-size:12px;color:var(--ink-soft)}
+  .pdfinfo button{padding:3px 10px;font-size:12px}
+  .seg{display:flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+  .seg label{flex:1;text-align:center;cursor:pointer}
+  .seg input{position:absolute;opacity:0;pointer-events:none}
+  .seg span{display:block;padding:7px 6px;font-size:13px;font-weight:500;background:var(--paper);color:var(--ink-soft)}
+  .seg label+label span{border-left:1px solid var(--line)}
+  .seg input:checked+span{background:var(--ink);color:var(--paper)}
+  .seg input:focus-visible+span{outline:2px solid var(--plate);outline-offset:-2px}
+  .customgrid{display:flex;gap:8px;margin-top:8px}
+  .customgrid label.field{flex:1;margin:0}
+  .disabled-note{font-size:12.5px;color:var(--warn-ink);background:var(--warn-bg);border-radius:6px;padding:6px 9px;margin-top:8px}
+  .hidden{display:none !important}
+
+  /* ---------- results ---------- */
+  .results{min-width:0}
+  .msg{
+    background:var(--warn-bg);color:var(--warn-ink);border-radius:8px;
+    padding:11px 14px;font-size:13.5px;margin:0 0 16px;
+  }
+  .summary{
+    font-family:var(--mono);font-size:12.5px;color:var(--ink-soft);
+    margin:0 0 16px;display:flex;flex-wrap:wrap;gap:6px 20px;
+  }
+  .summary b{color:var(--ink);font-weight:600}
+
+  .booklet{
+    background:var(--card);border:1px solid var(--line);border-radius:10px;
+    padding:18px 20px;margin-bottom:18px;
+  }
+  .booklet-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 14px;margin-bottom:10px}
+  .booklet-head h2{font-size:16px;margin:0;font-weight:600}
+  .booklet-head .meta{font-family:var(--mono);font-size:12px;color:var(--ink-soft)}
+  .serialwrap{position:relative}
+  .serial{
+    font-family:var(--mono);font-size:13px;line-height:1.7;
+    background:var(--paper);border:1px solid var(--line);border-radius:8px;
+    padding:12px 14px;word-break:break-all;user-select:all;
+  }
+  .serial .blank{color:var(--warn-ink);background:var(--warn-bg);border-radius:3px;padding:0 2px}
+  .btnrow{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+  button{
+    font:inherit;font-size:13px;font-weight:500;cursor:pointer;
+    border:1px solid var(--line);background:var(--paper);color:var(--ink);
+    border-radius:7px;padding:7px 14px;
+  }
+  button.primary{background:var(--plate);border-color:var(--plate);color:#fff}
+  button.primary:hover{background:#2340B0}
+  button:hover{border-color:var(--ink-soft)}
+  button.copied{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+
+  /* ---------- sheet previews ---------- */
+  .sheets{margin-top:16px;display:none}
+  .booklet.open .sheets{display:block}
+  .sheetrow{display:flex;flex-wrap:wrap;gap:14px;margin-bottom:14px;align-items:flex-start}
+  .sheetlabel{
+    font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--ink-soft);width:100%;margin-bottom:-6px;
+    display:flex;align-items:center;gap:10px;
+  }
+  .sheetlabel .leader{flex:1;border-bottom:1px dotted var(--cut);height:0;min-width:24px}
+  .sheetlabel .range{color:var(--ink);font-weight:600;letter-spacing:.04em}
+  .side{flex:1;min-width:180px;max-width:340px}
+  .side .sidename{font-family:var(--mono);font-size:11px;color:var(--ink-soft);margin-bottom:4px}
+  table.paper{
+    border-collapse:collapse;width:100%;
+    background:#fff;box-shadow:0 1px 3px rgba(27,26,23,.12), 0 0 0 1px var(--line);
+    border-radius:2px;
+  }
+  table.paper td{
+    font-family:var(--mono);font-size:13px;text-align:center;
+    padding:0;height:52px;min-width:52px;position:relative;
+  }
+  td.fold-r{border-right:1.5px dashed var(--plate)}   /* fold line */
+  td.cut-r{border-right:1.5px solid var(--cut)}        /* vertical cut */
+  td.cut-b{border-bottom:1.5px solid var(--cut)}       /* horizontal cut */
+  td .blankcell{color:var(--cut)}
+  .legend{
+    font-family:var(--mono);font-size:11px;color:var(--ink-soft);
+    display:flex;gap:18px;margin:2px 0 12px;flex-wrap:wrap;
+  }
+  .legend .k{display:inline-block;width:22px;height:0;vertical-align:middle;margin-right:6px}
+  .legend .k.fold{border-top:1.5px dashed var(--plate)}
+  .legend .k.cut{border-top:1.5px solid var(--cut)}
+
+  /* ---------- how-to ---------- */
+  .howto{
+    border:1px solid var(--line);border-radius:10px;padding:18px 20px;
+    background:var(--plate-soft);margin-bottom:18px;
+  }
+  .howto h2{font-size:14px;margin:0 0 8px;font-weight:600}
+  .howto ol{margin:0;padding-left:20px}
+  .howto li{margin-bottom:6px;font-size:13.5px}
+  .howto li:last-child{margin-bottom:0}
+  code{font-family:var(--mono);font-size:.92em;background:rgba(43,73,198,.09);border-radius:4px;padding:1px 5px}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Imposer <span class="fold">/</span> booklet page-order calculator</h1>
+  <p>Turns a page count into the exact page sequence to paste into your print
+  dialog's page range, so “pages per sheet” + double-sided printing comes out
+  as a foldable, bindable booklet instead of a top-left-staple job.</p>
+</header>
+
+<div class="layout">
+
+<form class="panel" id="form" onsubmit="return false">
+
+  <fieldset>
+    <legend>Document</legend>
+    <label class="field">
+      <span class="lab">PDF file <span style="font-weight:400;color:var(--ink-soft)">(optional — processed entirely on this device, never uploaded)</span></span>
+      <input type="file" id="pdfFile" accept="application/pdf,.pdf">
+      <div class="pdfinfo hidden" id="pdfInfo"></div>
+      <p class="hint hidden" id="pdfLibNote" style="color:var(--warn-ink)"></p>
+      <p class="hint">Load the PDF and the tool builds a ready-to-print copy —
+      pages reordered and blank pages inserted for you.</p>
+    </label>
+    <label class="field">
+      <span class="lab">Total pages in the PDF</span>
+      <input type="number" id="totalPages" min="1" step="1" value="21">
+    </label>
+    <label class="field" id="blankPageWrap">
+      <span class="lab">Blank page number <span style="font-weight:400;color:var(--ink-soft)">(optional)</span></span>
+      <input type="number" id="blankPage" min="1" step="1" placeholder="e.g. 22">
+      <p class="hint">Booklets pad to multiples of 4. Without a PDF loaded:
+      print dialogs can't insert blanks, so add one empty page to the end of
+      your PDF and enter its number here. With a PDF loaded: leave empty to
+      auto-insert blank pages, or enter a page number to use that page of your
+      PDF for every padding slot (e.g. a decorative blank or notes page).</p>
+    </label>
+    <label class="field" id="padStyleWrap">
+      <span class="lab">Padding placement</span>
+      <select id="padStyle">
+        <option value="front" selected>Front only — blanks after the cover page</option>
+        <option value="back">Back only — blanks before the last page</option>
+        <option value="both">Front and back — split between the two</option>
+        <option value="end">End — after the last page (last page won't be the back cover)</option>
+      </select>
+      <p class="hint">Front, back, and both keep page 1 as the cover and the
+      last page as the back cover.</p>
+    </label>
+    <label class="check" id="secondRightWrap">
+      <input type="checkbox" id="secondRight">
+      <span>Start page 2 on the reading side — inserts a blank behind the cover
+      so page 2 opens on the recto (right page in LTR, left page in RTL); front
+      padding is adjusted to keep this true.</span>
+    </label>
+    <p class="hint hidden" id="padAutoNote" style="color:var(--warn-ink)">One-sided
+    books place their own blanks, so padding placement and the page-2 option are
+    handled automatically there.</p>
+  </fieldset>
+
+  <fieldset>
+    <legend>Layout</legend>
+    <label class="field">
+      <span class="lab">Pages per sheet (per printed side)</span>
+      <select id="layoutPreset">
+        <option value="1x2" selected>2 — one spread (1 row × 2 columns)</option>
+        <option value="2x2">4 — grid 2 × 2</option>
+        <option value="3x2">6 — grid 3 rows × 2 columns</option>
+        <option value="2x3">6 — grid 2 rows × 3 columns</option>
+        <option value="3x3">9 — grid 3 × 3</option>
+        <option value="4x4">16 — grid 4 × 4</option>
+        <option value="custom">Custom grid…</option>
+      </select>
+      <p class="hint">Match this to the “pages per sheet” layout your print
+      dialog actually uses (most use 2 columns for 4-up, 3 columns for 6-up).</p>
+    </label>
+    <div class="customgrid hidden" id="customGrid">
+      <label class="field"><span class="lab">Rows</span>
+        <input type="number" id="gridRows" min="1" max="8" value="2"></label>
+      <label class="field"><span class="lab">Columns</span>
+        <input type="number" id="gridCols" min="1" max="8" value="2"></label>
+    </div>
+
+    <label class="field" style="margin-top:12px">
+      <span class="lab">Imposition mode</span>
+      <div class="seg" role="radiogroup">
+        <label><input type="radio" name="mode" value="booklet" checked><span>Folded booklet</span></label>
+        <label><input type="radio" name="mode" value="cutstack"><span>Cut &amp; stack</span></label>
+      </div>
+      <p class="hint" id="modeHint">Folded booklet: fold sheets down the middle
+      and bind at the fold. Cut &amp; stack: every cell is one page — cut the
+      cells apart and stack the piles in order (the only option for odd column
+      counts like 3×3).</p>
+      <p class="disabled-note hidden" id="modeNote"></p>
+    </label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Book</legend>
+    <label class="field">
+      <span class="lab">Reading direction</span>
+      <div class="seg" role="radiogroup">
+        <label><input type="radio" name="dir" value="ltr" checked><span>LTR — English</span></label>
+        <label><input type="radio" name="dir" value="rtl"><span>RTL — العربية</span></label>
+      </div>
+    </label>
+    <label class="check" id="singleSidedWrap">
+      <input type="checkbox" id="singleSided">
+      <span>One-sided book — content only on the reading-side (recto) pages;
+      the facing pages stay blank. Cover and back cover print as usual.</span>
+    </label>
+    <label class="check hidden" id="duplexWrap" style="margin-top:8px">
+      <input type="checkbox" id="duplex" checked>
+      <span>Print double-sided (uncheck for single-sided cut &amp; stack)</span>
+    </label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Splitting</legend>
+    <div class="radios">
+      <label><input type="radio" name="split" value="single" checked>
+        <span>One booklet with everything</span></label>
+      <label><input type="radio" name="split" value="count">
+        <span>Number of booklets
+          <span class="sub">pages divided as evenly as possible</span></span></label>
+      <input type="number" class="inline-num hidden" id="splitCount" min="1" value="2">
+      <label><input type="radio" name="split" value="max">
+        <span>Max pages per booklet
+          <span class="sub">useful when one fold gets too thick — ≤ 24 keeps a clean fold</span></span></label>
+      <input type="number" class="inline-num hidden" id="splitMax" min="1" value="20">
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Printer</legend>
+    <label class="field">
+      <span class="lab">After the duplex flip, the back side mirrors…</span>
+      <select id="mirrorAxis">
+        <option value="cols" selected>left ↔ right (most printers / flip on long edge)</option>
+        <option value="rows">top ↕ bottom (flip on short edge)</option>
+      </select>
+      <p class="hint">If a 4-page test prints with backs behind the wrong
+      halves or upside down, switch this (or the printer's flip setting).</p>
+    </label>
+  </fieldset>
+
+</form>
+
+<div class="results" id="results"></div>
+
+</div>
+
+<script>
+/* ================= imposition core (verified) ================= */
+
+function computeChunks(n, splitMode, splitValue) {
+  if (splitMode === 'single') return [{ start: 1, count: n }];
+  let sizes = [];
+  if (splitMode === 'count') {
+    const k = Math.max(1, Math.min(Math.floor(splitValue) || 1, n));
+    const base = Math.floor(n / k), extra = n % k;
+    for (let i = 0; i < k; i++) sizes.push(base + (i < extra ? 1 : 0));
+  } else {
+    const m = Math.max(1, Math.floor(splitValue) || 1);
+    let rem = n;
+    while (rem > 0) { const c = Math.min(m, rem); sizes.push(c); rem -= c; }
+  }
+  const chunks = []; let s = 1;
+  for (const c of sizes) if (c > 0) { chunks.push({ start: s, count: c }); s += c; }
+  return chunks;
+}
+
+function buildLogicalPages(start, count, singleSided, padStyle, secondRight) {
+  if (!singleSided) {
+    if (count === 1) return [start, 0, 0, 0];
+    let P = Math.max(4, Math.ceil(count / 4) * 4);
+    let totalPad = P - count;
+    // page 2 on a recto needs an odd number of front blanks, so at least one
+    const needF = !!secondRight && count >= 3;
+    if (needF && totalPad < 1) { P += 4; totalPad += 4; }
+    let f = 0, b = 0, trailing = 0;
+    if (padStyle === 'back') b = totalPad;
+    else if (padStyle === 'both') { f = Math.ceil(totalPad / 2); b = totalPad - f; }
+    else if (padStyle === 'end') trailing = totalPad;
+    else f = totalPad; // 'front' (default)
+    if (needF) {
+      if (padStyle === 'end') { f = 1; trailing = totalPad - 1; }
+      else if (f % 2 === 0) {
+        if (f === 0) { f = 1; b -= 1; }      // borrow one blank from the back
+        else { f -= 1; b += 1; }             // shift one blank to the back
+      }
+    }
+    const arr = new Array(P).fill(0);
+    arr[0] = start;                          // cover
+    let idx = 1 + f;
+    if (padStyle === 'end') {
+      for (let i = 1; i < count; i++) arr[idx++] = start + i;
+    } else {
+      for (let i = 1; i < count - 1; i++) arr[idx++] = start + i;
+      arr[P - 1] = start + count - 1;        // back cover
+    }
+    return arr;
+  }
+  if (count <= 1) { const a = [0, 0, 0, 0]; a[0] = start; return a; }
+  if (count === 2) return [start, 0, 0, start + 1];
+  const interior = count - 2;
+  const lastRectoPos = 3 + 2 * (interior - 1);
+  const P = Math.ceil((lastRectoPos + 1) / 4) * 4;
+  const arr = new Array(P).fill(0);
+  arr[0] = start;
+  for (let i = 0; i < interior; i++) arr[2 + 2 * i] = start + 1 + i;
+  arr[P - 1] = start + count - 1;
+  return arr;
+}
+
+function splitSignatures(P, R) {
+  const quads = P / 4;
+  const used = Math.min(R, quads);
+  const sizes = [];
+  let rem = quads;
+  for (let j = 0; j < used; j++) {
+    const q = Math.ceil(rem / (used - j));
+    sizes.push(q * 4); rem -= q;
+  }
+  while (sizes.length < R) sizes.push(0);
+  return sizes;
+}
+
+const grid = (rows, cols) => Array.from({ length: rows }, () => new Array(cols).fill(null));
+const verso = x => (x % 2 ? x + 1 : x - 1);
+
+function imposeBooklet(chunk, rows, cols, rtl, singleSided, padStyle, secondRight) {
+  const logical = buildLogicalPages(chunk.start, chunk.count, singleSided, padStyle, secondRight);
+  const P = logical.length;
+  const pairsPerRow = cols / 2;
+  const R = rows * pairsPerRow;
+  const sigSizes = splitSignatures(P, R);
+  let off = 0;
+  const sigs = sigSizes.map(sz => { const a = logical.slice(off, off + sz); off += sz; return a; });
+  const S = Math.max(...sigSizes) / 4;
+  const sheets = [];
+  for (let s = 0; s < S; s++) {
+    const front = grid(rows, cols), behind = grid(rows, cols);
+    sigs.forEach((sig, j) => {
+      const Pj = sig.length;
+      if (!Pj || s >= Pj / 4) return;
+      const row = Math.floor(j / pairsPerRow), pair = j % pairsPerRow;
+      const cL = pair * 2, cR = cL + 1;
+      const leftLocal = rtl ? 1 + 2 * s : Pj - 2 * s;
+      const rightLocal = rtl ? Pj - 2 * s : 1 + 2 * s;
+      front[row][cL] = { page: sig[leftLocal - 1] };
+      front[row][cR] = { page: sig[rightLocal - 1] };
+      behind[row][cL] = { page: sig[verso(leftLocal) - 1] };
+      behind[row][cR] = { page: sig[verso(rightLocal) - 1] };
+    });
+    sheets.push({ front, behind });
+  }
+  return { sheets, physicalPages: P, sigCount: sigSizes.filter(Boolean).length };
+}
+
+function imposeCutStack(chunk, rows, cols, rtl, duplex) {
+  const cells = rows * cols;
+  const per = duplex ? 2 : 1;
+  const S = Math.max(1, Math.ceil(chunk.count / (cells * per)));
+  const pileSize = S * per;
+  const order = [];
+  for (let r = 0; r < rows; r++) {
+    const cs = [...Array(cols).keys()];
+    if (rtl) cs.reverse();
+    for (const c of cs) order.push([r, c]);
+  }
+  const pageAt = local => (local <= chunk.count ? chunk.start + local - 1 : 0);
+  const sheets = [];
+  for (let s = 0; s < S; s++) {
+    const front = grid(rows, cols), behind = duplex ? grid(rows, cols) : null;
+    order.forEach(([r, c], k) => {
+      const localF = k * pileSize + per * s + 1;
+      front[r][c] = { page: pageAt(localF) };
+      if (duplex) behind[r][c] = { page: pageAt(localF + 1) };
+    });
+    sheets.push({ front, behind });
+  }
+  return { sheets, physicalPages: cells * per * S, sigCount: 0 };
+}
+
+function backFromBehind(behind, rows, cols, axis) {
+  const back = grid(rows, cols);
+  for (let r = 0; r < rows; r++)
+    for (let c = 0; c < cols; c++)
+      back[r][c] = axis === 'cols' ? behind[r][cols - 1 - c] : behind[rows - 1 - r][c];
+  return back;
+}
+
+function sequenceFromSheets(sheets, rows, cols, axis) {
+  const toks = [];
+  const pushSide = g => {
+    for (let r = 0; r < rows; r++)
+      for (let c = 0; c < cols; c++) {
+        const cell = g[r][c];
+        toks.push(cell && cell.page ? cell.page : 0);
+      }
+  };
+  for (const sh of sheets) {
+    pushSide(sh.front);
+    if (sh.behind) pushSide(backFromBehind(sh.behind, rows, cols, axis));
+  }
+  while (toks.length && toks[toks.length - 1] === 0) toks.pop();
+  return toks;
+}
+
+/* ================= UI ================= */
+
+const $ = id => document.getElementById(id);
+
+/* ---------- client-side PDF handling ---------- */
+const state = { pdfBytes: null, pdfName: '', pdfPages: 0, bookletTokens: [], slotsPerSheet: 0 };
+const pdfLibOk = () => typeof window.PDFLib !== 'undefined';
+
+async function onPdfChosen(e) {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  const note = $('pdfLibNote');
+  note.classList.add('hidden');
+  if (!pdfLibOk()) {
+    note.textContent = 'The PDF library could not be loaded (this feature needs an internet connection the first time). The page-order serial below still works.';
+    note.classList.remove('hidden');
+    e.target.value = '';
+    return;
+  }
+  try {
+    const buf = await file.arrayBuffer();
+    const doc = await PDFLib.PDFDocument.load(buf, { ignoreEncryption: true });
+    state.pdfBytes = buf;
+    state.pdfName = file.name;
+    state.pdfPages = doc.getPageCount();
+    $('totalPages').value = state.pdfPages;
+    $('totalPages').disabled = true;
+    updatePdfInfo();
+    recalc();
+  } catch (err) {
+    note.textContent = 'Could not read that PDF (it may be corrupted or password-protected). Nothing was changed.';
+    note.classList.remove('hidden');
+    e.target.value = '';
+  }
+}
+
+function clearPdf() {
+  state.pdfBytes = null; state.pdfName = ''; state.pdfPages = 0;
+  $('pdfFile').value = '';
+  $('totalPages').disabled = false;
+  updatePdfInfo();
+  recalc();
+}
+
+function updatePdfInfo() {
+  const box = $('pdfInfo');
+  if (!state.pdfBytes) { box.classList.add('hidden'); box.innerHTML = ''; return; }
+  box.innerHTML = `<b>${esc(state.pdfName)}</b><span class="pages">${state.pdfPages} pages</span><button type="button" id="pdfRemove">Remove</button>`;
+  box.classList.remove('hidden');
+  $('pdfRemove').addEventListener('click', clearPdf);
+}
+
+// Build a new PDF with pages in imposed order, real blank pages where needed.
+async function buildImposedPdf(tokenLists) {
+  const { PDFDocument } = PDFLib;
+  const src = await PDFDocument.load(state.pdfBytes, { ignoreEncryption: true });
+  const out = await PDFDocument.create();
+  const first = src.getPage(0).getSize();
+  const slots = state.slotsPerSheet;
+  const bn = Math.floor(+$('blankPage').value) || 0;
+  const padIdx = bn >= 1 && bn <= src.getPageCount() ? bn - 1 : -1; // page used for padding slots
+  const order = [];
+  for (const toks of tokenLists) {
+    const padded = toks.slice();
+    while (padded.length % slots) padded.push(0);       // complete the last sheet
+    for (const t of padded) order.push(t > 0 ? t - 1 : padIdx); // -1 = insert empty page
+  }
+  const copied = await out.copyPages(src, order.filter(i => i >= 0));
+  let ci = 0;
+  for (const i of order) {
+    if (i >= 0) out.addPage(copied[ci++]);
+    else out.addPage([first.width, first.height]);
+  }
+  return out.save();
+}
+
+async function downloadImposed(indices, btn) {
+  const old = btn.textContent;
+  btn.textContent = 'Building…'; btn.disabled = true;
+  try {
+    const lists = indices.map(i => state.bookletTokens[i]);
+    const bytes = await buildImposedPdf(lists);
+    const base = state.pdfName.replace(/\.pdf$/i, '');
+    const name = indices.length > 1
+      ? `${base}-imposed-all.pdf`
+      : `${base}-imposed${state.bookletTokens.length > 1 ? '-booklet' + (indices[0] + 1) : ''}.pdf`;
+    const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    btn.textContent = 'Downloaded';
+    setTimeout(() => { btn.textContent = old; btn.disabled = false; }, 1400);
+  } catch (err) {
+    btn.textContent = 'Failed — see console'; console.error(err);
+    setTimeout(() => { btn.textContent = old; btn.disabled = false; }, 2500);
+  }
+}
+const radio = name => document.querySelector(`input[name=${name}]:checked`).value;
+
+function currentGrid() {
+  const preset = $('layoutPreset').value;
+  if (preset === 'custom') {
+    return {
+      rows: Math.max(1, Math.min(8, +$('gridRows').value || 1)),
+      cols: Math.max(1, Math.min(8, +$('gridCols').value || 1)),
+    };
+  }
+  const [r, c] = preset.split('x').map(Number);
+  return { rows: r, cols: c };
+}
+
+function syncControls() {
+  const { cols } = currentGrid();
+  const mode = radio('mode');
+  const bookletRadio = document.querySelector('input[name=mode][value=booklet]');
+  const note = $('modeNote');
+
+  $('customGrid').classList.toggle('hidden', $('layoutPreset').value !== 'custom');
+
+  if (cols % 2 !== 0) {
+    bookletRadio.disabled = true;
+    if (mode === 'booklet') document.querySelector('input[name=mode][value=cutstack]').checked = true;
+    note.textContent = `A folded booklet needs facing pages, so it needs an even number of columns — a ${cols}-column grid can only be cut & stacked. Pick a 2- or 4-column layout for folding.`;
+    note.classList.remove('hidden');
+  } else {
+    bookletRadio.disabled = false;
+    note.classList.add('hidden');
+  }
+
+  const m = radio('mode');
+  $('singleSidedWrap').classList.toggle('hidden', m !== 'booklet');
+  const ss = $('singleSided').checked;
+  $('padStyleWrap').classList.toggle('hidden', m !== 'booklet');
+  $('secondRightWrap').classList.toggle('hidden', m !== 'booklet');
+  $('padStyle').disabled = ss;
+  $('secondRight').disabled = ss;
+  $('padAutoNote').classList.toggle('hidden', m !== 'booklet' || !ss);
+  $('duplexWrap').classList.toggle('hidden', m !== 'cutstack');
+
+  const split = radio('split');
+  $('splitCount').classList.toggle('hidden', split !== 'count');
+  $('splitMax').classList.toggle('hidden', split !== 'max');
+}
+
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function renderSideTable(g, rows, cols, mode) {
+  const pairFold = c => mode === 'booklet' && c % 2 === 0;         // fold after even col
+  const pairCut  = c => mode === 'booklet' ? (c % 2 === 1 && c < cols - 1) : c < cols - 1;
+  let html = '<table class="paper">';
+  for (let r = 0; r < rows; r++) {
+    html += '<tr>';
+    for (let c = 0; c < cols; c++) {
+      const cell = g[r][c];
+      const cls = [];
+      if (pairFold(c)) cls.push('fold-r');
+      else if (pairCut(c)) cls.push('cut-r');
+      if (r < rows - 1) cls.push('cut-b');
+      const val = cell && cell.page ? cell.page : '<span class="blankcell">·</span>';
+      html += `<td class="${cls.join(' ')}">${val}</td>`;
+    }
+    html += '</tr>';
+  }
+  return html + '</table>';
+}
+
+function recalc() {
+  syncControls();
+  const out = $('results');
+  const n = Math.floor(+$('totalPages').value);
+  if (!n || n < 1) { out.innerHTML = '<p class="msg">Enter the total number of pages to generate the print order.</p>'; return; }
+
+  const { rows, cols } = currentGrid();
+  const mode = radio('mode');
+  const rtl = radio('dir') === 'rtl';
+  const singleSided = mode === 'booklet' && $('singleSided').checked;
+  const padStyle = $('padStyle').value;
+  const secondRight = mode === 'booklet' && !singleSided && $('secondRight').checked;
+  const duplex = mode === 'booklet' ? true : $('duplex').checked;
+  const axis = $('mirrorAxis').value;
+  const split = radio('split');
+  const splitValue = split === 'count' ? +$('splitCount').value : +$('splitMax').value;
+  const blankNum = Math.floor(+$('blankPage').value) || 0;
+
+  const chunks = computeChunks(n, split, splitValue);
+  const perSide = rows * cols;
+  const hasPdf = !!state.pdfBytes;
+  state.bookletTokens = [];
+  state.slotsPerSheet = perSide * (duplex ? 2 : 1);
+
+  let totalSheets = 0, totalBlanks = 0;
+  const cards = chunks.map((chunk, i) => {
+    const imp = mode === 'booklet'
+      ? imposeBooklet(chunk, rows, cols, rtl, singleSided, padStyle, secondRight)
+      : imposeCutStack(chunk, rows, cols, rtl, duplex);
+    const seq = sequenceFromSheets(imp.sheets, rows, cols, axis);
+    state.bookletTokens.push(seq);
+    totalSheets += imp.sheets.length;
+    totalBlanks += seq.filter(t => t === 0).length;
+
+    const serialHtml = seq.map(t => t === 0
+      ? (blankNum ? `<span class="blank">${blankNum}</span>` : '<span class="blank">b</span>')
+      : t).join(',');
+    const serialText = seq.map(t => t === 0 ? (blankNum || 'b') : t).join(',');
+
+    const sheetsHtml = imp.sheets.map((sh, si) => {
+      const pa = si * state.slotsPerSheet + 1, pb = pa + state.slotsPerSheet - 1;
+      let h = `<div class="sheetrow"><div class="sheetlabel"><span>Sheet ${si + 1}</span><span class="leader"></span><span class="range" title="pages of this booklet's generated PDF on this sheet">${pa} – ${pb}</span></div>`;
+      h += `<div class="side"><div class="sidename">Front</div>${renderSideTable(sh.front, rows, cols, mode)}</div>`;
+      if (sh.behind) {
+        const back = backFromBehind(sh.behind, rows, cols, axis);
+        h += `<div class="side"><div class="sidename">Back (as the printer lays it out)</div>${renderSideTable(back, rows, cols, mode)}</div>`;
+      }
+      return h + '</div>';
+    }).join('');
+
+    const meta = [];
+    meta.push(`pages ${chunk.start}–${chunk.start + chunk.count - 1}`);
+    meta.push(`${imp.sheets.length} sheet${imp.sheets.length !== 1 ? 's' : ''} of paper`);
+    if (mode === 'booklet' && imp.sigCount > 1)
+      meta.push(`${imp.sigCount} signatures side by side — cut apart, fold each, stack in reading order`);
+
+    return `<div class="booklet" data-i="${i}">
+      <div class="booklet-head">
+        <h2>${chunks.length > 1 ? `Booklet ${i + 1}` : 'Booklet'}</h2>
+        <span class="meta">${meta.join(' · ')}</span>
+      </div>
+      <div class="serial" data-serial="${esc(serialText)}">${serialHtml}</div>
+      <div class="btnrow">
+        ${hasPdf ? `<button type="button" class="primary dlbtn" data-i="${i}">Download imposed PDF</button>
+        <button type="button" class="copybtn">Copy page order</button>`
+        : `<button type="button" class="primary copybtn">Copy page order</button>`}
+        <button type="button" class="togglebtn">Show sheet preview</button>
+      </div>
+      <div class="sheets">
+        <div class="legend" style="margin-top:12px">
+          ${mode === 'booklet' ? '<span><span class="k fold"></span>fold</span>' : ''}
+          ${(rows > 1 || cols > 2 || mode === 'cutstack') && (rows * cols > 2 || mode === 'cutstack') ? '<span><span class="k cut"></span>cut</span>' : ''}
+          <span><span style="color:var(--cut)">·</span>&nbsp;blank</span>
+          <span style="flex-basis:100%">n – n = pages of this booklet's generated PDF on that sheet; if a sheet misprints, reprint just that range${hasPdf ? '' : ' (or that stretch of the serial)'}</span>
+        </div>
+        ${sheetsHtml}
+      </div>
+    </div>`;
+  });
+
+  /* warnings + summary + how-to */
+  let pre = '';
+  if (hasPdf && totalBlanks > 0) {
+    const padSrc = blankNum >= 1 && blankNum <= state.pdfPages
+      ? `page <b>${blankNum}</b> of your PDF will be used for each of the <b>${totalBlanks}</b> padding slot${totalBlanks !== 1 ? 's' : ''}`
+      : `<b>${totalBlanks}</b> blank page${totalBlanks !== 1 ? 's' : ''} will be inserted automatically`;
+    pre += `<p class="msg" style="background:var(--plate-soft);color:var(--ink)">In the downloaded PDF, ${padSrc} — nothing else to do on your side.</p>`;
+  } else if (totalBlanks > 0 && !blankNum) {
+    pre += `<p class="msg">This layout needs <b>${totalBlanks}</b> blank slot${totalBlanks !== 1 ? 's' : ''} (shown as <b>b</b>). A print dialog can't insert blanks — add one empty page to the end of your PDF, then enter its page number in the form so every <b>b</b> becomes a real page.</p>`;
+  }
+
+  pre += `<div class="summary">
+    <span>layout <b>${perSide}/side (${rows}×${cols})</b></span>
+    <span>mode <b>${mode === 'booklet' ? 'folded booklet' : 'cut & stack'}</b></span>
+    <span>direction <b>${rtl ? 'RTL' : 'LTR'}</b></span>
+    <span>paper <b>${totalSheets} sheet${totalSheets !== 1 ? 's' : ''}</b></span>
+    ${totalBlanks ? `<span>blanks <b>${totalBlanks}</b></span>` : ''}
+  </div>`;
+
+  if (hasPdf && chunks.length > 1) {
+    pre += `<div class="btnrow" style="margin:-6px 0 16px"><button type="button" class="primary" id="dlAll">Download all booklets as one PDF</button></div>`;
+  }
+
+  const flipAdvice = axis === 'cols'
+    ? 'flip on long edge (portrait) / short edge (landscape) — whichever makes the back mirror left↔right'
+    : 'flip on short edge (portrait) — the back should mirror top↕bottom';
+
+  pre += hasPdf ? `<div class="howto"><h2>How to print</h2><ol>
+    <li>Download the imposed PDF below — pages are already reordered and blanks inserted, so any viewer works, including the ones that re-sort page lists.</li>
+    <li>Print <b>all pages in order</b> with <b>Pages per sheet</b> set to <code>${perSide}</code>${duplex ? ` and <b>two-sided</b> with ${flipAdvice}.` : ', single-sided.'}</li>
+    ${mode === 'booklet'
+      ? `<li>${rows * cols > 2 ? 'Cut along the solid guides first, then fold' : 'Fold'} each stack along the dashed line and bind at the fold — staple, saddle stitch, or sew.${rtl ? ' For an RTL book the spine ends up on the right, as it should.' : ''}</li>`
+      : `<li>Cut the cells apart along the guides and stack the piles in ${rtl ? 'right-to-left' : 'left-to-right'}, top-to-bottom order — each pile is already in page order.</li>`}
+    <li>Print one test sheet first. If the backs land behind the wrong halves, switch the “back side mirrors” option (or the printer's flip setting) and regenerate.</li>
+  </ol></div>` : `<div class="howto"><h2>How to print</h2><ol>
+    <li>Open the PDF in a viewer that respects the <em>order</em> of a page list — Adobe Acrobat, Foxit, and most native macOS/Windows dialogs do. Some viewers sort the list back to ascending; test with the first 4 numbers before a full run. (Or load the PDF above and skip this concern entirely.)</li>
+    <li>In the print dialog set <b>Pages</b> to the sequence below, <b>Pages per sheet</b> to <code>${perSide}</code>${duplex ? `, and <b>two-sided</b> with ${flipAdvice}.` : ', single-sided.'}</li>
+    ${mode === 'booklet'
+      ? `<li>${rows * cols > 2 ? 'Cut along the solid guides first, then fold' : 'Fold'} each stack along the dashed line and bind at the fold — staple, saddle stitch, or sew.${rtl ? ' For an RTL book the spine ends up on the right, as it should.' : ''}</li>`
+      : `<li>Cut the cells apart along the guides and stack the piles in ${rtl ? 'right-to-left' : 'left-to-right'}, top-to-bottom order — each pile is already in page order.</li>`}
+    <li>Print one test sheet first. If the backs land behind the wrong halves, switch the “back side mirrors” option (or the printer's flip setting) and regenerate.</li>
+  </ol></div>`;
+
+  out.innerHTML = pre + cards.join('');
+
+  out.querySelectorAll('.copybtn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const text = btn.closest('.booklet').querySelector('.serial').dataset.serial;
+      const done = () => { btn.textContent = 'Copied'; btn.classList.add('copied');
+        setTimeout(() => { btn.textContent = 'Copy page order'; btn.classList.remove('copied'); }, 1400); };
+      if (navigator.clipboard && navigator.clipboard.writeText)
+        navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
+      else fallbackCopy(text, done);
+    });
+  });
+  out.querySelectorAll('.dlbtn').forEach(btn => {
+    btn.addEventListener('click', () => downloadImposed([+btn.dataset.i], btn));
+  });
+  const dlAll = document.getElementById('dlAll');
+  if (dlAll) dlAll.addEventListener('click', () => downloadImposed(state.bookletTokens.map((_, i) => i), dlAll));
+  out.querySelectorAll('.togglebtn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const card = btn.closest('.booklet');
+      card.classList.toggle('open');
+      btn.textContent = card.classList.contains('open') ? 'Hide sheet preview' : 'Show sheet preview';
+    });
+  });
+}
+
+function fallbackCopy(text, done) {
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); done(); } catch (e) {}
+  document.body.removeChild(ta);
+}
+
+document.getElementById('form').addEventListener('input', recalc);
+$('pdfFile').addEventListener('change', onPdfChosen);
+recalc();
+</script>
+</body>
+</html>
