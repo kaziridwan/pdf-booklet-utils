@@ -25,8 +25,13 @@ jobs:
       - name: Prepare site artifact
         run: |
           mkdir -p _site
+          test -f index.html
           cp index.html _site/
-          cp .nojekyll _site/
+          if [ -f .nojekyll ]; then
+            cp .nojekyll _site/
+          else
+            touch _site/.nojekyll
+          fi
 
       - name: Upload pages artifact
         uses: actions/upload-pages-artifact@v3
