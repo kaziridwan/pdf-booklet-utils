@@ -24,14 +24,10 @@ jobs:
 
       - name: Prepare site artifact
         run: |
-          mkdir -p _site
           test -f index.html || { echo "Error: index.html not found"; exit 1; }
+          mkdir -p _site
           cp index.html _site/
-          if [ -f .nojekyll ]; then
-            cp .nojekyll _site/
-          else
-            touch _site/.nojekyll
-          fi
+          touch _site/.nojekyll
 
       - name: Upload pages artifact
         uses: actions/upload-pages-artifact@v3
